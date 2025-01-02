@@ -209,7 +209,7 @@ func Duration(name string, defaultValue time.Duration) time.Duration {
 func value[T any](name string, value T, convert caster[T]) T {
 	s, ok := os.LookupEnv(name)
 	if !ok {
-		return value()
+		return value
 	}
 
 	v, err := convert(s)
