@@ -12,94 +12,129 @@ import (
 	"time"
 )
 
+// vars if the queue of configured Vars to process on Parse().
+var vars []func()
+
 type caster[T any] func(string) (T, error)
 
 // StringVar will assign the value of the env variable name to the memory
 // address of addr. If there is no env variable set, then the defaultValue will
 // be assigned instead.
 //
+// The configured StringVar will be set when Parse() is called, and is offset
+// to allow env configuration to occur during package inits without values
+// being unpredictably set. See Parse() for more info.
+//
 // If there is an env variable matching name, but it is not set (i.e. it has an
 // empty string value) then the empty value will be used instead of the
 // defaultValue.
 func StringVar(addr *string, name, defaultValue string) {
-	setVar(addr, name, defaultValue, castString)
+	queueSetVar(addr, name, defaultValue, castString)
 }
 
 // IntVar will attempt to convert the value of the env variable name to an int,
 // and then assign the converted value to the address of addr. If there is no
 // env variable set, then the defaultValue will be assigned instead.
 //
+// The configured IntVar will be set when Parse() is called, and is offset to
+// allow env configuration to occur during package inits without values being
+// unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to an int, then
 // this function will panic. This includes if the env variable is set as empty
 // ("").
 func IntVar(addr *int, name string, defaultValue int) {
-	setVar(addr, name, defaultValue, strconv.Atoi)
+	queueSetVar(addr, name, defaultValue, strconv.Atoi)
 }
 
 // Int64Var will attempt to convert the value of the env variable name to an
 // int64, and then assign the converted value to the address of addr. If there
 // is no env variable set, then the defaultValue will be assigned instead.
 //
+// The configured Int64Var will be set when Parse() is called, and is offset to
+// allow env configuration to occur during package inits without values being
+// unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to an int64, then
 // this function will panic. This includes if the env variable is set as empty
 // ("").
 func Int64Var(addr *int64, name string, defaultValue int64) {
-	setVar(addr, name, defaultValue, castInt64)
+	queueSetVar(addr, name, defaultValue, castInt64)
 }
 
 // UintVar will attempt to convert the value of the env variable name to a uint,
 // and then assign the converted value to the address of addr. If there is no
 // env variable set, then the defaultValue will be assigned instead.
 //
+// The configured UintVar will be set when Parse() is called, and is offset to
+// allow env configuration to occur during package inits without values being
+// unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to an uint, then
 // this function will panic. This includes if the env variable is set as empty
 // ("").
 func UintVar(addr *uint, name string, defaultValue uint) {
-	setVar(addr, name, defaultValue, castUint)
+	queueSetVar(addr, name, defaultValue, castUint)
 }
 
 // Uint64Var will attempt to convert the value of the env variable name to a
 // uint64, and then assign the converted value to the address of addr. If there
 // is no env variable set, then the defaultValue will be assigned instead.
 //
+// The configured Uint64Var will be set when Parse() is called, and is offset
+// to allow env configuration to occur during package inits without values
+// being unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to an uint64, then
 // this function will panic. This includes if the env variable is set as empty
 // ("").
 func Uint64Var(addr *uint64, name string, defaultValue uint64) {
-	setVar(addr, name, defaultValue, castUint64)
+	queueSetVar(addr, name, defaultValue, castUint64)
 }
 
 // Float64Var will attempt to convert the value of the env variable name to a
 // float64, and then assign the converted value to the address of addr. If there
 // is no env variable set, then the defaultValue will be assigned instead.
 //
+// The configured Float64Var will be set when Parse() is called, and is offset
+// to allow env configuration to occur during package inits without values
+// being unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to a float64, then
 // this function will panic. This includes if the env variable is set as empty
 // ("").
 func Float64Var(addr *float64, name string, defaultValue float64) {
-	setVar(addr, name, defaultValue, castFloat64)
+	queueSetVar(addr, name, defaultValue, castFloat64)
 }
 
 // BoolVar will attempt to convert the value of the env variable name to a bool
 // and then assign the converted value to the address of addr. If there is no
 // env variable set, then the defaultValue will be assigned instead.
 //
+// The configured BoolVar will be set when Parse() is called, and is offset to
+// allow env configuration to occur during package inits without values being
+// unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to a bool, then
 // this function will panic. This includes if the env variable is set as empty
 // ("").
 func BoolVar(addr *bool, name string, defaultValue bool) {
-	setVar(addr, name, defaultValue, strconv.ParseBool)
+	queueSetVar(addr, name, defaultValue, strconv.ParseBool)
 }
 
 // DurationVar will attempt to convert the value of the env variable name to a
 // time.Duration and then assign the converted value to the address of addr. If
 // there is no env variable set, then the defaultValue will be assigned instead.
 //
+// The configured DurationVar will be set when Parse() is called, and is offset
+// to allow env configuration to occur during package inits without values
+// being unpredictably set. See Parse() for more info.
+//
 // If the value of the env variable name cannot be converted to a time.Duration,
 // then this function will panic. This includes if the env variable is set as
 // empty ("").
 func DurationVar(addr *time.Duration, name string, defaultValue time.Duration) {
-	setVar(addr, name, defaultValue, castDuration)
+	queueSetVar(addr, name, defaultValue, castDuration)
 }
 
 func setVar[T any](addr *T, name string, defaultValue T, cast caster[T]) {
@@ -116,6 +151,26 @@ func setVar[T any](addr *T, name string, defaultValue T, cast caster[T]) {
 	}
 
 	*addr = cv
+}
+
+func queueSetVar[T any](addr *T, name string, defaultValue T, cast caster[T]) {
+	vars = append(vars, func() {
+		setVar(addr, name, defaultValue, cast)
+	})
+}
+
+// Parse will process all configured XVars that have been set (e.g. StringVar)
+// and populate the provided memory addresses (or panic on error).
+//
+// Parse should not be called from within the init function of any package, and
+// should instead be called from main (or as early on in the program's
+// operation as possible). This is to allow any additional env configuration,
+// i.e. via .env files, that would normally occur within a package init function
+// to all conclude safely (and predictably) before any env vars are fetched.
+func Parse() {
+	for _, fn := range vars {
+		fn()
+	}
 }
 
 // String returns the value of the env variable name to the memory address of
